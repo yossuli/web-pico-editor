@@ -4,6 +4,9 @@ import webmanifest from './src/manifest.json';
 
 export default {
   base: './',
+  build: {
+    outDir: 'docs'
+  },
   plugins: [
     eslint(),
     VitePWA({
