@@ -1,14 +1,15 @@
 {
-  "name": "serial-terminal",
+  "name": "web-pico-editor",
   "version": "0.0.1",
-  "description": "A demonstration of the Serial API providing an interactive serial console.",
+  "description": "Web Rapsberry Pi Pico Editor using the Web Serial API.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/GoogleChromeLabs/serial-terminal.git"
+    "url": "https://github.com/jcodeorg/web-pico-editor.git"
   },
   "dependencies": {
     "@types/w3c-web-serial": "^1.0.3",
+    "monaco-editor": "^0.51.0",
     "web-serial-polyfill": "^1.0.14",
     "xterm": "^5.2.1",
     "xterm-addon-fit": "^0.7.0",

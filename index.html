@@ -10,7 +10,9 @@
       box-sizing: border-box;
     }
     #terminal {
-      height: 90vh;
+      height: 15em; /* 15行分の高さ */
+      overflow-y: auto; /* 縦方向のスクロールを有効にする */
+      border: 1px solid #ccc; /* 境界線を追加 */
     }
     .options {
       padding: 0.75em;
@@ -24,75 +26,94 @@
     label.checkbox {
       margin-right: 1em;
     }
+    #editor {
+      width: 100%;
+      height: 400px;
+      border: 1px solid #ccc;
+    }
   </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.28.1/min/vs/editor/editor.main.min.css">
 </head>
 <body>
-<div class="options">
-  <label for="ports">Port:</label>
-  <select id="ports">
-    <option value="prompt">Click 'Connect' to add a port...</option>
-  </select>
-  <button id="connect">Connect</button>
+  <div class="options">
+    <label for="ports">Port:</label>
+    <select id="ports">
+      <option value="prompt">Click 'Connect' to add a port...</option>
+    </select>
+    <button id="connect">Connect</button>
 
-  <button id="download">Download output</button>
-  <button id="clear">Clear output</button>
+    <button id="download">Download output</button>
+    <button id="clear">Clear output</button>
+    <button id="stopButton">STOP!</button>
+    
+    <div class="info" style="display: none;">
+      <a id="polyfill_switcher"></a>
+    </div>
+    <br>
 
-  <div class="info">
-    <a id="polyfill_switcher"></a>
+    <label for="baudrate">Baud rate:</label>
+    <select id="baudrate">
+      <option value="9600">9600</option>
+      <option value="14400">14400</option>
+      <option value="19200">19220</option>
+      <option value="28800">28800</option>
+      <option value="38400">38400</option>
+      <option value="57600">57600</option>
+      <option value="115200" selected>115200</option>
+      <option value="230400">230400</option>
+      <option value="460800">460800</option>
+      <option value="921600">921600</option>
+      <option value="custom">Custom</option>
+    </select>
+    <input id="custom_baudrate" type="number" min="1" placeholder="Enter baudrate..." hidden>
+    <label for="databits">Data bits:</label>
+    <select id="databits">
+      <option value="7">7</option>
+      <option value="8" selected>8</option>
+    </select>
+    <label for="parity">Parity:</label>
+    <select id="parity">
+      <option value="none" selected>None</option>
+      <option value="even">Even</option>
+      <option value="odd">Odd</option>
+    </select>
+    <label for="stopbits">Stop bits:</label>
+    <select id="stopbits">
+      <option value="1" selected>1</option>
+      <option value="2">2</option>
+    </select>
+    <input id="rtscts" type="checkbox">
+    <label for="rtscts">Hardware flow control</label>
+
+    <br>
+
+    <input id="echo" type="checkbox">
+    <label class="checkbox" for="echo">Local echo</label>
+    <input id="enter_flush" type="checkbox">
+    <label class="checkbox" for="enter_flush">Flush on enter</label>
+    <input id="convert_eol" type="checkbox">
+    <label class="checkbox" for="convert_eol">Convert EOL</label>
+    <input id="autoconnect" type="checkbox">
+    <label class="checkbox" for="autoconnect">Automatically connect</label>
+
+    <div class="info">
+      <a href="https://github.com/jcodeorg/web-pico-editor">Source Code on GitHub</a>
+    </div>
   </div>
 
+  <textarea id="textInput"></textarea>
   <br>
 
-  <label for="baudrate">Baud rate:</label>
-  <select id="baudrate">
-    <option value="9600">9600</option>
-    <option value="14400">14400</option>
-    <option value="19200">19220</option>
-    <option value="28800">28800</option>
-    <option value="38400">38400</option>
-    <option value="57600">57600</option>
-    <option value="115200" selected>115200</option>
-    <option value="230400">230400</option>
-    <option value="460800">460800</option>
-    <option value="921600">921600</option>
-    <option value="custom">Custom</option>
-  </select>
-  <input id="custom_baudrate" type="number" min="1" placeholder="Enter baudrate..." hidden>
-  <label for="databits">Data bits:</label>
-  <select id="databits">
-    <option value="7">7</option>
-    <option value="8" selected>8</option>
-  </select>
-  <label for="parity">Parity:</label>
-  <select id="parity">
-    <option value="none" selected>None</option>
-    <option value="even">Even</option>
-    <option value="odd">Odd</option>
-  </select>
-  <label for="stopbits">Stop bits:</label>
-  <select id="stopbits">
-    <option value="1" selected>1</option>
-    <option value="2">2</option>
-  </select>
-  <input id="rtscts" type="checkbox">
-  <label for="rtscts">Hardware flow control</label>
-
+  <button id="loadFileButton22">Load main.py</button>
+  <button id="sendTextButton22">Send Text</button>
+  <div id="terminal"></div>
   <br>
 
-  <input id="echo" type="checkbox">
-  <label class="checkbox" for="echo">Local echo</label>
-  <input id="enter_flush" type="checkbox">
-  <label class="checkbox" for="enter_flush">Flush on enter</label>
-  <input id="convert_eol" type="checkbox">
-  <label class="checkbox" for="convert_eol">Convert EOL</label>
-  <input id="autoconnect" type="checkbox">
-  <label class="checkbox" for="autoconnect">Automatically connect</label>
-
-  <div class="info">
-    <a href="https://github.com/jcodeorg/web-pico-editor">Source Code on GitHub</a>
-  </div>
-</div>
-<div id="terminal"></div>
-<script type="module" src="/src/index.ts"></script>
+  <button id="loadFileButton">Load temp.py</button>
+  <button id="sendTextButton">Save temp.py</button>
+  <button id="runCodeButton">run Code</button>
+  <div id="editor"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.28.1/min/vs/loader.min.js"></script>
+  <script src="/src/index.ts" type="module"></script>
 </body>
 </html>

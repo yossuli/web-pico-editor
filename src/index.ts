@@ -21,6 +21,87 @@ import 'xterm/css/xterm.css';
 import {
   serial as polyfill, SerialPort as SerialPortPolyfill,
 } from 'web-serial-polyfill';
+import * as monaco from 'monaco-editor';
+
+// Monaco Editorの初期化
+document.addEventListener('DOMContentLoaded', () => {
+  const editor =
+    monaco.editor.create(document.getElementById('editor') as HTMLElement, {
+      value: '',
+      language: 'python',
+      theme: 'vs-dark',
+    });
+
+  // Load main.pyボタンのクリックイベント
+  const loadFileButton =
+    document.getElementById('loadFileButton') as HTMLButtonElement;
+  loadFileButton.addEventListener('click', async () => {
+    await loadMainPy(editor);
+  });
+
+  // Send Textボタンのクリックイベント
+  const sendTextButton =
+    document.getElementById('sendTextButton') as HTMLButtonElement;
+  sendTextButton.addEventListener('click', async () => {
+    await sendText(editor);
+  });
+
+  // run Code ボタンのクリックイベント
+  const runCodeButton =
+    document.getElementById('runCodeButton') as HTMLButtonElement;
+  runCodeButton.addEventListener('click', async () => {
+    await runCode(editor);
+  });
+});
+
+/**
+ * Load main.py from the MicroPython device and display it in the editor.
+ *
+ * @param {monaco.editor.IStandaloneCodeEditor} editor
+ *  - The Monaco editor instance.
+ */
+async function loadMainPy(editor: monaco.editor.IStandaloneCodeEditor) {
+  if (pico.prepareWritablePort()) {
+    await pico.write('\x01'); // CTRL+A：raw モード
+    await pico.write('import os\r');
+    await pico.write('with open("temp.py") as f:\r');
+    await pico.write('  print(f.read())\r');
+    await pico.write('\x04'); // CTRL+D
+    pico.releaseLock();
+
+    await pico.waitForOK(); // ">OK"を待つ
+    const result = pico.getReceivedData();
+    console.log('result:', result);
+    const hexResult = Array.from(result, (char) =>
+      char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
+    console.log('dump:', hexResult);
+    pico.sendCommand('\x02'); // CTRL+B
+
+    editor.setValue(result); // エディタに結果を表示
+  }
+}
+
+/**
+ * Send the content of the editor to the MicroPython device.
+ *
+ * @param {monaco.editor.IStandaloneCodeEditor} editor
+ *  - The Monaco editor instance.
+ */
+async function sendText(editor: monaco.editor.IStandaloneCodeEditor) {
+  const text = editor.getValue();
+  await pico.writeFile('temp.py', text); // エディタの内容をファイルに書き込む
+}
+
+/**
+ * Run the content of the editor to the MicroPython device.
+ *
+ * @param {monaco.editor.IStandaloneCodeEditor} editor
+ *  - The Monaco editor instance.
+ */
+async function runCode(editor: monaco.editor.IStandaloneCodeEditor) {
+  const text = editor.getValue();
+  await pico.runCode(text); // 実行
+}
 
 /**
  * Elements of the port selection dropdown extend HTMLOptionElement so that
@@ -212,6 +293,201 @@ function getSelectedBaudRate(): number {
 }
 
 /**
+ * Class representing a Pico device.
+ */
+class Pico {
+  private writer: WritableStreamDefaultWriter | null = null;
+  private picoRecivedBuff = '';
+
+  /**
+   * Prepare the writable port.
+   * @return {WritableStreamDefaultWriter | null}
+   * The writer instance or null if not available.
+   */
+  prepareWritablePort() {
+    if (port && port.writable) {
+      this.writer = port.writable.getWriter();
+    } else {
+      this.writer = null;
+    }
+    return this.writer;
+  }
+
+  /**
+   * Release the writer lock.
+   */
+  releaseLock() {
+    if (this.writer) {
+      this.writer.releaseLock();
+    }
+  }
+
+  /**
+   * Write a string to the writer.
+   * @param {string} s - The string to write.
+   * @throws {Error} If the writer is not available.
+   */
+  async write(s: string) {
+    if (this.writer) {
+      await this.writer.write(new TextEncoder().encode(s));
+    } else {
+      throw new Error('Writer is not available');
+    }
+  }
+
+  /**
+   * Write a file to the MicroPython device.
+   * @param {string} filename - The name of the file.
+   * @param {string} content - The content to write to the file.
+   */
+  async writeFile(filename: string, content: string) {
+    if (this.prepareWritablePort()) {
+      const lines = content.split('\n');
+      await this.write('\x05'); // CTRL+E
+      await this.write(`with open("${filename}", "w") as f:\r`);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        let sanitizedLine = line.replace(/[\r\n]+$/, '');
+        if (i === lines.length - 1) {
+          if (sanitizedLine) {
+            await this.write(`  f.write(${JSON.stringify(sanitizedLine)})`);
+          }
+        } else {
+          sanitizedLine += '\n';
+          await this.write(`  f.write(${JSON.stringify(sanitizedLine)})\r`);
+        }
+      }
+      await this.write('\x04'); // CTRL+D
+      this.releaseLock();
+    }
+  }
+
+  /**
+   * Run code on the MicroPython device.
+   * @param {string} content - The content to write to the file.
+   */
+  async runCode(content: string) {
+    if (this.prepareWritablePort()) {
+      await this.write('\x05'); // CTRL+E
+      await this.write(content);
+      await this.write('\x04'); // CTRL+D
+      this.releaseLock();
+    }
+  }
+
+  /**
+   * Puts a buffer value and logs it to the console.
+   *
+   * @param {Uint8Array} value - The buffer value to be logged.
+   * @param {boolean} done - A boolean indicating whether the operation is done.
+   */
+  public putBuffer(value: Uint8Array | undefined, done: boolean): void {
+    const stringValue = value ? new TextDecoder().decode(value) : '';
+    if (stringValue) {
+      this.picoRecivedBuff += stringValue;
+    }
+    const logval =
+      '[BUFF]' + stringValue + (done ? '[Done]' : '[...]');
+    console.log(logval);
+  }
+
+  /**
+   * Retrieves the received buffer.
+   *
+   * @return {string} The received buffer as a string.
+   */
+  public getReceivedBuff(): string {
+    const combinedArray = this.picoRecivedBuff;
+    // バッファをクリア
+    this.picoRecivedBuff = '';
+    return combinedArray;
+  }
+
+  private isDataTransferMode = false;
+
+  /**
+   * Retrieves the received buffer.
+   *
+   * @return {string} The received buffer as a string.
+   */
+  public getReceivedData(): string {
+    if (!this.isDataTransferMode) {
+      return '';
+    }
+
+    const receivedData = this.picoRecivedBuff;
+    // バッファをクリア
+    this.picoRecivedBuff = '';
+
+    // データ中に CTRL+D が現れたら、その手前までのデータを返却し、データ転送モードを終了にする
+    const endIndex = receivedData.indexOf('\x04'); // CTRL+D
+    if (endIndex !== -1) {
+      this.isDataTransferMode = false;
+      return receivedData.substring(0, endIndex);
+    }
+
+    return receivedData;
+  }
+  /**
+   * Wait >OK
+   *
+   */
+  async waitForOK(): Promise<void> {
+    const targetString = '>OK';
+    let receivedData = '';
+    const timeout = 3000; // タイムアウト時間をミリ秒で設定
+    const startTime = Date.now();
+
+    while (!this.isDataTransferMode) {
+      // 受信データを取得
+      const decodedData = this.getReceivedBuff();
+      console.log('Decoded Data:', decodedData);
+
+      // 受信データに">OK"が含まれているかチェック
+      receivedData += decodedData;
+      if (receivedData.includes(targetString)) {
+        console.log('Received ">OK"');
+        // OKが見つかった後のデータをpicoRecivedBuffに残す
+        const remainingData = receivedData.split(targetString)[1];
+        this.picoRecivedBuff = remainingData ? remainingData : '';
+        // データ転送モードに入るフラグを立てる
+        this.isDataTransferMode = true;
+        break;
+      }
+      console.log('waiting:', receivedData);
+
+      // タイムアウトチェック
+      if (Date.now() - startTime > timeout) {
+        throw new Error('Timeout waiting for ">OK"');
+      }
+
+      // 少し待機してから再度チェック
+      await new Promise<void>(
+          (resolve) => {
+            setTimeout(resolve, 100);
+          }
+      );
+    }
+  }
+
+  /**
+   * Send command to the Pico device.
+   *
+   * @param {string} command - The command to send.
+   */
+  async sendCommand(command: string) {
+    if (this.prepareWritablePort()) {
+      await this.write(command);
+      this.releaseLock();
+    }
+  }
+}
+
+// Pico クラスのインスタンスを作成
+const pico = new Pico();
+
+
+/**
  * Resets the UI back to the disconnected state.
  */
 function markDisconnected(): void {
@@ -302,6 +578,8 @@ async function connectToPort(): Promise<void> {
           }
         })();
 
+        pico.putBuffer(value, done); // バッファに蓄積する
+
         if (value) {
           await new Promise<void>((resolve) => {
             term.write(value, resolve);
@@ -385,6 +663,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   const clearOutput = document.getElementById('clear') as HTMLSelectElement;
   clearOutput.addEventListener('click', clearTerminalContents);
 
+  // STOPボタン：CTRL-C を送信
+  const stopButton =
+    document.getElementById('stopButton') as HTMLButtonElement;
+  stopButton.addEventListener('click', sendCtrlC);
+
+  // 送信ボタン：テキストを送信
+  const sendTextButton =
+    document.getElementById('sendTextButton22') as HTMLButtonElement;
+  sendTextButton.addEventListener('click', sendText22);
+
+  // 読み込みボタン：main.pyを読み込む
+  const loadFileButton =
+    document.getElementById('loadFileButton22') as HTMLButtonElement;
+  loadFileButton.addEventListener('click', loadMainPy22);
+
+
   portSelector = document.getElementById('ports') as HTMLSelectElement;
 
   connectButton = document.getElementById('connect') as HTMLButtonElement;
@@ -457,3 +751,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 });
+
+
+/**
+ * Send CTRL+C to the terminal.
+ */
+async function sendCtrlC() {
+  pico.sendCommand('\x03'); // CTRL+C
+}
+
+/**
+ * Send text from the textarea to the terminal.
+ */
+async function sendText22() {
+  const textInput = document.getElementById('textInput') as HTMLTextAreaElement;
+  const text = textInput.value;
+  await pico.writeFile('temp.py', text); // textInputの内容をファイルに書き込む
+}
+
+/**
+ * Load main.py from the MicroPython device and display it in the textarea.
+ */
+async function loadMainPy22() {
+  if (pico.prepareWritablePort()) {
+    await pico.write('\x01'); // CTRL+A：raw モード
+    await pico.write('import os\r');
+    await pico.write('with open("temp.py") as f:\r');
+    await pico.write('  print(f.read())\r');
+    await pico.write('\x04'); // CTRL+D
+    pico.releaseLock();
+
+    await pico.waitForOK(); // ">OK"を待つ
+    const result = pico.getReceivedData();
+    console.log('result:', result);
+    const hexResult = Array.from(result, (char) =>
+      char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
+    console.log('dump:', hexResult);
+    pico.sendCommand('\x02'); // CTRL+B
+
+    const textInput =
+      document.getElementById('textInput') as HTMLTextAreaElement;
+    textInput.value = result; // Display the result in the textarea
+  }
+}
