@@ -40,17 +40,26 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Send Textボタンのクリックイベント
-  const sendTextButton =
-    document.getElementById('sendTextButton') as HTMLButtonElement;
-  sendTextButton.addEventListener('click', async () => {
-    await sendText(editor);
+  const saveFileButton =
+    document.getElementById('saveFileButton') as HTMLButtonElement;
+  saveFileButton.addEventListener('click', async () => {
+    const text = editor.getValue();
+    await pico.writeFile('temp.py', text); // エディタの内容をファイルに書き込む
   });
 
   // run Code ボタンのクリックイベント
   const runCodeButton =
     document.getElementById('runCodeButton') as HTMLButtonElement;
   runCodeButton.addEventListener('click', async () => {
-    await runCode(editor);
+    const text = editor.getValue();
+    await pico.runCode(text); // 実行
+  });
+
+  // STOPボタン：CTRL-C を送信
+  const stopButton =
+    document.getElementById('stopButton') as HTMLButtonElement;
+  stopButton.addEventListener('click', ()=> {
+    pico.sendCommand('\x03'); // CTRL+C
   });
 });
 
@@ -82,28 +91,6 @@ async function loadMainPy(editor: monaco.editor.IStandaloneCodeEditor) {
 }
 
 /**
- * Send the content of the editor to the MicroPython device.
- *
- * @param {monaco.editor.IStandaloneCodeEditor} editor
- *  - The Monaco editor instance.
- */
-async function sendText(editor: monaco.editor.IStandaloneCodeEditor) {
-  const text = editor.getValue();
-  await pico.writeFile('temp.py', text); // エディタの内容をファイルに書き込む
-}
-
-/**
- * Run the content of the editor to the MicroPython device.
- *
- * @param {monaco.editor.IStandaloneCodeEditor} editor
- *  - The Monaco editor instance.
- */
-async function runCode(editor: monaco.editor.IStandaloneCodeEditor) {
-  const text = editor.getValue();
-  await pico.runCode(text); // 実行
-}
-
-/**
  * Elements of the port selection dropdown extend HTMLOptionElement so that
  * they can reference the SerialPort they represent.
  */
@@ -113,19 +100,12 @@ declare class PortOption extends HTMLOptionElement {
 
 let portSelector: HTMLSelectElement;
 let connectButton: HTMLButtonElement;
-let baudRateSelector: HTMLSelectElement;
-let customBaudRateInput: HTMLInputElement;
-let dataBitsSelector: HTMLSelectElement;
-let paritySelector: HTMLSelectElement;
-let stopBitsSelector: HTMLSelectElement;
-let flowControlCheckbox: HTMLInputElement;
-let echoCheckbox: HTMLInputElement;
-let flushOnEnterCheckbox: HTMLInputElement;
-let autoconnectCheckbox: HTMLInputElement;
+const autoconnect = false;
 
 let portCounter = 1;
-let port: SerialPort | SerialPortPolyfill | undefined;
-let reader: ReadableStreamDefaultReader | ReadableStreamBYOBReader | undefined;
+let picoport: SerialPort | SerialPortPolyfill | undefined;
+let picoreader:
+  ReadableStreamDefaultReader | ReadableStreamBYOBReader | undefined;
 
 const urlParams = new URLSearchParams(window.location.search);
 const usePolyfill = urlParams.has('polyfill');
@@ -141,30 +121,18 @@ term.loadAddon(fitAddon);
 term.loadAddon(new WebLinksAddon());
 
 const encoder = new TextEncoder();
-let toFlush = '';
-term.onData((data) => {
-  if (echoCheckbox.checked) {
-    term.write(data);
-  }
 
-  if (port?.writable == null) {
+term.onData((data) => {
+  // echoCheckbox.checked
+  //   term.write(data);
+
+  if (picoport?.writable == null) {
     console.warn(`unable to find writable port`);
     return;
   }
 
-  const writer = port.writable.getWriter();
-
-  if (flushOnEnterCheckbox.checked) {
-    toFlush += data;
-    if (data === '\r') {
-      writer.write(encoder.encode(toFlush));
-      writer.releaseLock();
-      toFlush = '';
-    }
-  } else {
-    writer.write(encoder.encode(data));
-  }
-
+  const writer = picoport.writable.getWriter();
+  writer.write(encoder.encode(data));
   writer.releaseLock();
 });
 
@@ -270,26 +238,16 @@ async function getSelectedPort(): Promise<void> {
   if (portSelector.value == 'prompt') {
     try {
       const serial = usePolyfill ? polyfill : navigator.serial;
-      port = await serial.requestPort({});
+      picoport = await serial.requestPort({});
     } catch (e) {
       return;
     }
-    const portOption = maybeAddNewPort(port);
+    const portOption = maybeAddNewPort(picoport);
     portOption.selected = true;
   } else {
     const selectedOption = portSelector.selectedOptions[0] as PortOption;
-    port = selectedOption.port;
+    picoport = selectedOption.port;
   }
-}
-
-/**
- * @return {number} the currently selected baud rate
- */
-function getSelectedBaudRate(): number {
-  if (baudRateSelector.value == 'custom') {
-    return Number.parseInt(customBaudRateInput.value);
-  }
-  return Number.parseInt(baudRateSelector.value);
 }
 
 /**
@@ -305,8 +263,8 @@ class Pico {
    * The writer instance or null if not available.
    */
   prepareWritablePort() {
-    if (port && port.writable) {
-      this.writer = port.writable.getWriter();
+    if (picoport && picoport.writable) {
+      this.writer = picoport.writable.getWriter();
     } else {
       this.writer = null;
     }
@@ -341,9 +299,13 @@ class Pico {
    * @param {string} content - The content to write to the file.
    */
   async writeFile(filename: string, content: string) {
+    if (picoreader) {
+      await picoreader.cancel(); // ターミナル出力を停止
+    }
+    this.clearpicoport(); // ターミナル出力せずに読み込み（バッファをクリア）
     if (this.prepareWritablePort()) {
       const lines = content.split('\n');
-      await this.write('\x05'); // CTRL+E
+      await this.write('\x01'); // CTRL+A
       await this.write(`with open("${filename}", "w") as f:\r`);
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -359,7 +321,24 @@ class Pico {
       }
       await this.write('\x04'); // CTRL+D
       this.releaseLock();
+      pico.sendCommand('\x02'); // CTRL+B
     }
+    if (picoreader) {
+      await picoreader.cancel(); // ターミナル出力を停止
+    }
+    this.readpicoport(); // ターミナル出力を再開
+  }
+  /**
+   * Put buffer to the terminal or store it in the buffer.
+   * @param {Uint8Array} value - value to put
+   */
+  public putBuffer(value: Uint8Array | undefined): void {
+    const stringValue = value ? new TextDecoder().decode(value) : '';
+    if (stringValue) {
+      this.picoRecivedBuff += stringValue;
+    }
+    const logval = '[BUFF]' + stringValue + '[...]';
+    console.log(logval);
   }
 
   /**
@@ -368,27 +347,12 @@ class Pico {
    */
   async runCode(content: string) {
     if (this.prepareWritablePort()) {
-      await this.write('\x05'); // CTRL+E
+      await this.write('\x01'); // CTRL+A
       await this.write(content);
       await this.write('\x04'); // CTRL+D
+      await this.write('\x02'); // CTRL+B
       this.releaseLock();
     }
-  }
-
-  /**
-   * Puts a buffer value and logs it to the console.
-   *
-   * @param {Uint8Array} value - The buffer value to be logged.
-   * @param {boolean} done - A boolean indicating whether the operation is done.
-   */
-  public putBuffer(value: Uint8Array | undefined, done: boolean): void {
-    const stringValue = value ? new TextDecoder().decode(value) : '';
-    if (stringValue) {
-      this.picoRecivedBuff += stringValue;
-    }
-    const logval =
-      '[BUFF]' + stringValue + (done ? '[Done]' : '[...]');
-    console.log(logval);
   }
 
   /**
@@ -403,7 +367,7 @@ class Pico {
     return combinedArray;
   }
 
-  private isDataTransferMode = false;
+  public isDataTransferMode = false;
 
   /**
    * Retrieves the received buffer.
@@ -481,142 +445,164 @@ class Pico {
       this.releaseLock();
     }
   }
-}
 
-// Pico クラスのインスタンスを作成
-const pico = new Pico();
-
-
-/**
- * Resets the UI back to the disconnected state.
- */
-function markDisconnected(): void {
-  term.writeln('<DISCONNECTED>');
-  portSelector.disabled = false;
-  connectButton.textContent = 'Connect';
-  connectButton.disabled = false;
-  baudRateSelector.disabled = false;
-  customBaudRateInput.disabled = false;
-  dataBitsSelector.disabled = false;
-  paritySelector.disabled = false;
-  stopBitsSelector.disabled = false;
-  flowControlCheckbox.disabled = false;
-  port = undefined;
-}
-
-/**
- * Initiates a connection to the selected port.
- */
-async function connectToPort(): Promise<void> {
-  await getSelectedPort();
-  if (!port) {
-    return;
-  }
-
-  const options = {
-    baudRate: getSelectedBaudRate(),
-    dataBits: Number.parseInt(dataBitsSelector.value),
-    parity: paritySelector.value as ParityType,
-    stopBits: Number.parseInt(stopBitsSelector.value),
-    flowControl:
-        flowControlCheckbox.checked ? <const> 'hardware' : <const> 'none',
-    bufferSize,
-
-    // Prior to Chrome 86 these names were used.
-    baudrate: getSelectedBaudRate(),
-    databits: Number.parseInt(dataBitsSelector.value),
-    stopbits: Number.parseInt(stopBitsSelector.value),
-    rtscts: flowControlCheckbox.checked,
-  };
-  console.log(options);
-
-  portSelector.disabled = true;
-  connectButton.textContent = 'Connecting...';
-  connectButton.disabled = true;
-  baudRateSelector.disabled = true;
-  customBaudRateInput.disabled = true;
-  dataBitsSelector.disabled = true;
-  paritySelector.disabled = true;
-  stopBitsSelector.disabled = true;
-  flowControlCheckbox.disabled = true;
-
-  try {
-    await port.open(options);
-    term.writeln('<CONNECTED>');
-    connectButton.textContent = 'Disconnect';
+  /**
+   * Resets the UI back to the disconnected state.
+   */
+  public markDisconnected(): void {
+    term.writeln('<DISCONNECTED>');
+    portSelector.disabled = false;
+    connectButton.textContent = 'Connect';
     connectButton.disabled = false;
-  } catch (e) {
-    console.error(e);
-    if (e instanceof Error) {
-      term.writeln(`<ERROR: ${e.message}>`);
-    }
-    markDisconnected();
-    return;
+    connectButton.classList.add('button-default');
+    picoport = undefined;
   }
 
-  while (port && port.readable) {
-    try {
-      try {
-        reader = port.readable.getReader({mode: 'byob'});
-      } catch {
-        reader = port.readable.getReader();
-      }
-
-      let buffer = null;
-      for (;;) {
-        const {value, done} = await (async () => {
-          if (reader instanceof ReadableStreamBYOBReader) {
-            if (!buffer) {
-              buffer = new ArrayBuffer(bufferSize);
-            }
-            const {value, done} =
-                await reader.read(new Uint8Array(buffer, 0, bufferSize));
-            buffer = value?.buffer;
-            return {value, done};
-          } else {
-            return await reader.read();
-          }
-        })();
-
-        pico.putBuffer(value, done); // バッファに蓄積する
-
-        if (value) {
-          await new Promise<void>((resolve) => {
-            term.write(value, resolve);
-          });
-        }
-        if (done) {
-          break;
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      await new Promise<void>((resolve) => {
-        if (e instanceof Error) {
-          term.writeln(`<ERROR: ${e.message}>`, resolve);
-        }
-      });
-    } finally {
-      if (reader) {
-        reader.releaseLock();
-        reader = undefined;
-      }
+  /**
+   * Open the port.
+   */
+  async openpicoport(): Promise<void> {
+    await getSelectedPort();
+    if (!picoport) {
+      return;
     }
-  }
-
-  if (port) {
+    const options = {
+      baudRate: 115200,
+    };
+    portSelector.disabled = true;
+    connectButton.textContent = 'Connecting...';
+    connectButton.classList.remove('button-default');
     try {
-      await port.close();
+      await picoport.open(options);
+      term.writeln('<CONNECTED>');
+      connectButton.textContent = 'Disconnect';
+      connectButton.disabled = false;
     } catch (e) {
       console.error(e);
       if (e instanceof Error) {
         term.writeln(`<ERROR: ${e.message}>`);
       }
+      this.markDisconnected();
+      return;
     }
-
-    markDisconnected();
+  }
+  /**
+   * Close the port.
+   */
+  async closepicoport(): Promise<void> {
+    if (picoport) {
+      try {
+        await picoport.close();
+      } catch (e) {
+        console.error(e);
+        if (e instanceof Error) {
+          term.writeln(`<ERROR: ${e.message}>`);
+        }
+      }
+      this.markDisconnected();
+    }
+  }
+  /**
+   * read the port.
+   */
+  async readpicoport(): Promise<undefined> {
+    let result: { value?: Uint8Array, done?: boolean } = {};
+    while (picoport && picoport.readable) {
+      try {
+        picoreader = picoport.readable.getReader({mode: 'byob'});
+        let buffer = null;
+        result = await (async () => {
+          if (!buffer) {
+            buffer = new ArrayBuffer(bufferSize);
+          }
+          const {value, done} =
+              await picoreader.read(new Uint8Array(buffer, 0, bufferSize));
+          buffer = value?.buffer;
+          return {value, done};
+        })();
+        const stringValue =
+          result.value ? new TextDecoder().decode(result.value) : '';
+        console.log('Received:', result.done, stringValue);
+        if (result.value) {
+          this.putBuffer(result.value); // バッファに蓄積 or ターミナルに出力
+          await new Promise<void>((resolve) => {
+            if (result.value !== undefined) {
+              term.write(result.value, resolve);
+            }
+          });
+        }
+        if (result.done) {
+          break;
+        }
+      } catch (e) {
+        console.error(e);
+        await new Promise<void>((resolve) => {
+          if (e instanceof Error) {
+            term.writeln(`<ERROR: ${e.message}>`, resolve);
+          }
+        });
+      } finally {
+        if (picoreader) {
+          picoreader.releaseLock();
+          picoreader = undefined;
+        }
+      }
+    }
+  }
+  /**
+   * 読み込みバッファをクリア
+   */
+  async clearpicoport(): Promise<undefined> {
+    let result: { value?: Uint8Array, done?: boolean } = {};
+    while (picoport && picoport.readable) {
+      try {
+        picoreader = picoport.readable.getReader({mode: 'byob'});
+        let buffer = null;
+        result = await (async () => {
+          if (!buffer) {
+            buffer = new ArrayBuffer(bufferSize);
+          }
+          const {value, done} =
+              await picoreader.read(new Uint8Array(buffer, 0, bufferSize));
+          buffer = value?.buffer;
+          return {value, done};
+        })();
+        if (result.value) {
+          const stringValue =
+            result.value ? new TextDecoder().decode(result.value) : '';
+          console.log('skip:', stringValue);
+        }
+        if (result.done) {
+          break;
+        }
+      } catch (e) {
+        console.error(e);
+        await new Promise<void>((resolve) => {
+          if (e instanceof Error) {
+            term.writeln(`<ERROR: ${e.message}>`, resolve);
+          }
+        });
+      } finally {
+        if (picoreader) {
+          picoreader.releaseLock();
+          picoreader = undefined;
+        }
+      }
+    }
+  }
+  /**
+   * Initiates a connection to the selected port.
+   */
+  async connectToPort(): Promise<void> {
+    await this.openpicoport(); // ポートを開く
+    await this.readpicoport(); // ポートから読み取りターミナルに出力
+    term.writeln('<DONE!!!!!!!>');
+    // await this.closepicoport();
   }
 }
+
+// Pico クラスのインスタンスを作成
+const pico = new Pico();
 
 /**
  * Closes the currently active connection.
@@ -624,11 +610,11 @@ async function connectToPort(): Promise<void> {
 async function disconnectFromPort(): Promise<void> {
   // Move |port| into a local variable so that connectToPort() doesn't try to
   // close it on exit.
-  const localPort = port;
-  port = undefined;
+  const localPort = picoport;
+  picoport = undefined;
 
-  if (reader) {
-    await reader.cancel();
+  if (picoreader) {
+    await picoreader.cancel();
   }
 
   if (localPort) {
@@ -642,7 +628,7 @@ async function disconnectFromPort(): Promise<void> {
     }
   }
 
-  markDisconnected();
+  pico.markDisconnected();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -663,71 +649,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const clearOutput = document.getElementById('clear') as HTMLSelectElement;
   clearOutput.addEventListener('click', clearTerminalContents);
 
-  // STOPボタン：CTRL-C を送信
-  const stopButton =
-    document.getElementById('stopButton') as HTMLButtonElement;
-  stopButton.addEventListener('click', sendCtrlC);
-
-  // 送信ボタン：テキストを送信
-  const sendTextButton =
-    document.getElementById('sendTextButton22') as HTMLButtonElement;
-  sendTextButton.addEventListener('click', sendText22);
-
-  // 読み込みボタン：main.pyを読み込む
-  const loadFileButton =
-    document.getElementById('loadFileButton22') as HTMLButtonElement;
-  loadFileButton.addEventListener('click', loadMainPy22);
-
-
   portSelector = document.getElementById('ports') as HTMLSelectElement;
 
   connectButton = document.getElementById('connect') as HTMLButtonElement;
   connectButton.addEventListener('click', () => {
-    if (port) {
+    if (picoport) {
       disconnectFromPort();
     } else {
-      connectToPort();
+      pico.connectToPort();
     }
   });
 
-  baudRateSelector = document.getElementById('baudrate') as HTMLSelectElement;
-  baudRateSelector.addEventListener('input', () => {
-    if (baudRateSelector.value == 'custom') {
-      customBaudRateInput.hidden = false;
-    } else {
-      customBaudRateInput.hidden = true;
-    }
-  });
-
-  customBaudRateInput =
-      document.getElementById('custom_baudrate') as HTMLInputElement;
-  dataBitsSelector = document.getElementById('databits') as HTMLSelectElement;
-  paritySelector = document.getElementById('parity') as HTMLSelectElement;
-  stopBitsSelector = document.getElementById('stopbits') as HTMLSelectElement;
-  flowControlCheckbox = document.getElementById('rtscts') as HTMLInputElement;
-  echoCheckbox = document.getElementById('echo') as HTMLInputElement;
-  flushOnEnterCheckbox =
-      document.getElementById('enter_flush') as HTMLInputElement;
-  autoconnectCheckbox =
-      document.getElementById('autoconnect') as HTMLInputElement;
-
-  const convertEolCheckbox =
-      document.getElementById('convert_eol') as HTMLInputElement;
-  const convertEolCheckboxHandler = () => {
-    term.options.convertEol = convertEolCheckbox.checked;
-  };
-  convertEolCheckbox.addEventListener('change', convertEolCheckboxHandler);
-  convertEolCheckboxHandler();
-
-  const polyfillSwitcher =
-      document.getElementById('polyfill_switcher') as HTMLAnchorElement;
-  if (usePolyfill) {
-    polyfillSwitcher.href = './';
-    polyfillSwitcher.textContent = 'Switch to native API';
-  } else {
-    polyfillSwitcher.href = './?polyfill';
-    polyfillSwitcher.textContent = 'Switch to API polyfill';
-  }
 
   const serial = usePolyfill ? polyfill : navigator.serial;
   const ports: (SerialPort | SerialPortPolyfill)[] = await serial.getPorts();
@@ -738,9 +670,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!usePolyfill) {
     navigator.serial.addEventListener('connect', (event) => {
       const portOption = addNewPort(event.target as SerialPort);
-      if (autoconnectCheckbox.checked) {
+      if (autoconnect) {
         portOption.selected = true;
-        connectToPort();
+        pico.connectToPort();
       }
     });
     navigator.serial.addEventListener('disconnect', (event) => {
@@ -751,46 +683,3 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 });
-
-
-/**
- * Send CTRL+C to the terminal.
- */
-async function sendCtrlC() {
-  pico.sendCommand('\x03'); // CTRL+C
-}
-
-/**
- * Send text from the textarea to the terminal.
- */
-async function sendText22() {
-  const textInput = document.getElementById('textInput') as HTMLTextAreaElement;
-  const text = textInput.value;
-  await pico.writeFile('temp.py', text); // textInputの内容をファイルに書き込む
-}
-
-/**
- * Load main.py from the MicroPython device and display it in the textarea.
- */
-async function loadMainPy22() {
-  if (pico.prepareWritablePort()) {
-    await pico.write('\x01'); // CTRL+A：raw モード
-    await pico.write('import os\r');
-    await pico.write('with open("temp.py") as f:\r');
-    await pico.write('  print(f.read())\r');
-    await pico.write('\x04'); // CTRL+D
-    pico.releaseLock();
-
-    await pico.waitForOK(); // ">OK"を待つ
-    const result = pico.getReceivedData();
-    console.log('result:', result);
-    const hexResult = Array.from(result, (char) =>
-      char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
-    console.log('dump:', hexResult);
-    pico.sendCommand('\x02'); // CTRL+B
-
-    const textInput =
-      document.getElementById('textInput') as HTMLTextAreaElement;
-    textInput.value = result; // Display the result in the textarea
-  }
-}
