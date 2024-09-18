@@ -505,7 +505,7 @@ class Pico {
   /**
    * read the port.
    */
-  async readpicoport(): Promise<undefined> {
+  async readpicoport(): Promise<void> {
     let result: { value?: Uint8Array, done?: boolean } = {};
     while (picoport && picoport.readable) {
       try {
@@ -552,7 +552,7 @@ class Pico {
   /**
    * 読み込みバッファをクリア
    */
-  async clearpicoport(): Promise<undefined> {
+  async clearpicoport(): Promise<void> {
     let result: { value?: Uint8Array, done?: boolean } = {};
     while (picoport && picoport.readable) {
       try {
