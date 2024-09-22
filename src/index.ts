@@ -108,19 +108,16 @@ declare class PortOption extends HTMLOptionElement {
  * PicoSerialクラスは、シリアルポートの選択と接続を管理します。
  */
 class PicoSerial {
-  public portSelector: HTMLSelectElement; // ポート選択ドロップダウン
-  public connectButton: HTMLButtonElement; // 接続ボタン
+  // ポート選択ドロップダウン
+  public portSelector: HTMLSelectElement | undefined = undefined;
+  // 接続ボタン
+  public connectButton: HTMLButtonElement | undefined = undefined;
   private portCounter = 1; // addNewPort で名前の末尾に付ける番号
 
   // 現在使用しているポート
   public picoport: SerialPort | undefined;
   // 現在使用しているリーダー
   public picoreader: ReadableStreamDefaultReader | undefined;
-
-  constructor(portSelector: HTMLSelectElement, connectButton: HTMLButtonElement) {
-    this.portSelector = portSelector;
-    this.connectButton = connectButton;
-  }
 
   /**
    * 指定されたSerialPortを検索して返します。
@@ -130,6 +127,7 @@ class PicoSerial {
    */
   findPortOption(port: SerialPort):
     PortOption | null {
+    if (!this.portSelector) return null;
     for (let i = 0; i < this.portSelector.options.length; ++i) {
       const option = this.portSelector.options[i];
       if (option.value === 'prompt') {
@@ -153,7 +151,7 @@ class PicoSerial {
     const portOption = document.createElement('option') as PortOption;
     portOption.textContent = `Port ${this.portCounter++}`;
     portOption.port = port;
-    this.portSelector.appendChild(portOption);
+    this.portSelector?.appendChild(portOption);
     return portOption;
   }
 
@@ -176,7 +174,7 @@ class PicoSerial {
   * 選択されていない場合は、ユーザーにポートの選択を促します。
   */
   async getSelectedPort(): Promise<void> {
-    if (this.portSelector.value == 'prompt') {
+    if (this.portSelector?.value == 'prompt') {
       try {
         const serial = navigator.serial;
         this.picoport = await serial.requestPort({});
@@ -186,7 +184,7 @@ class PicoSerial {
       const portOption = this.maybeAddNewPort(this.picoport);
       portOption.selected = true;
     } else {
-      const selectedOption = this.portSelector.selectedOptions[0] as PortOption;
+      const selectedOption = this.portSelector?.selectedOptions[0] as PortOption;
       this.picoport = selectedOption.port;
     }
   }
@@ -220,20 +218,28 @@ class PicoSerial {
   markDisconnected(): void {
     this.picoport = undefined;
     term.writeln('<DISCONNECTED>');
-    this.portSelector.disabled = false;
-    this.connectButton.textContent = 'Connect';
-    this.connectButton.classList.add('button-default');
-    this.connectButton.disabled = false;
+    if (this.portSelector) {
+      this.portSelector.disabled = false;
+    }
+    if (this.connectButton) {
+      this.connectButton.textContent = 'Connect';
+      this.connectButton.classList.add('button-default');
+      this.connectButton.disabled = false;
+    }
   }
 
   /**
    * みためを|接続|状態にします
    */
   markConnected(): void {
-    this.portSelector.disabled = true;
-    this.connectButton.textContent = 'Disconnect';
-    this.connectButton.classList.remove('button-default');
-    this.connectButton.disabled = false;
+    if (this.portSelector) {
+      this.portSelector.disabled = true;
+    }
+    if (this.connectButton) {
+      this.connectButton.textContent = 'Disconnect';
+      this.connectButton.classList.remove('button-default');
+      this.connectButton.disabled = false;
+    }
   }
 
   /**
@@ -293,15 +299,15 @@ class PicoSerial {
   }
 }
 
-var picoserial:any = null;
+var picoserial = new PicoSerial();
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const portSelector =
+  picoserial.portSelector =
     document.getElementById('ports') as HTMLSelectElement;
-  const connectButton =
+  picoserial.connectButton =
     document.getElementById('connect') as HTMLButtonElement;
 
-  picoserial = new PicoSerial(portSelector, connectButton);
+  // picoserial = new PicoSerial(portSelector, connectButton);
   
   const ports: (SerialPort)[] = await navigator.serial.getPorts();
   ports.forEach((port) => picoserial.addNewPort(port));
