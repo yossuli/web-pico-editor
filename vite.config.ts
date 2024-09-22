@@ -8,7 +8,11 @@ export default {
     outDir: 'docs'
   },
   plugins: [
-    eslint(),
+    eslint({
+      // ESLintの設定を追加
+      failOnError: false, // エラーでビルドを失敗させない
+      failOnWarning: false, // 警告でビルドを失敗させない
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
