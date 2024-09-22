@@ -117,6 +117,11 @@ class PicoSerial {
   // 現在使用しているリーダー
   public picoreader: ReadableStreamDefaultReader | undefined;
 
+  constructor(portSelector: HTMLSelectElement, connectButton: HTMLButtonElement) {
+    this.portSelector = portSelector;
+    this.connectButton = connectButton;
+  }
+
   /**
    * 指定されたSerialPortを検索して返します。
    *
@@ -288,16 +293,19 @@ class PicoSerial {
   }
 }
 
-const picoserial = new PicoSerial();
+var picoserial:any = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  picoserial.portSelector =
+  const portSelector =
     document.getElementById('ports') as HTMLSelectElement;
+  const connectButton =
+    document.getElementById('connect') as HTMLButtonElement;
+
+  picoserial = new PicoSerial(portSelector, connectButton);
+  
   const ports: (SerialPort)[] = await navigator.serial.getPorts();
   ports.forEach((port) => picoserial.addNewPort(port));
 
-  picoserial.connectButton =
-    document.getElementById('connect') as HTMLButtonElement;
   picoserial.connectButton.addEventListener('click', async () => {
     if (picoserial.picoport) {
       picoserial.disconnectFromPort();
