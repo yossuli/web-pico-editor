@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import {Terminal} from 'xterm';
-import {FitAddon} from 'xterm-addon-fit';
-import {WebLinksAddon} from 'xterm-addon-web-links';
+import { Terminal } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
+import { WebLinksAddon } from 'xterm-addon-web-links';
 import 'xterm/css/xterm.css';
 import * as monaco from 'monaco-editor';
 
@@ -37,7 +37,7 @@ class ReplTerminal extends Terminal {
     this.loadAddon(this.fitAddon);
     this.loadAddon(new WebLinksAddon());
 
-    this.onData((data)=>{
+    this.onData((data) => {
       if (pico) {
         pico.sendCommand(data);
       }
@@ -46,10 +46,7 @@ class ReplTerminal extends Terminal {
 }
 
 // Term クラスのインスタンスを作成
-const term = new ReplTerminal(
-    {scrollback: 10_000},
-    new FitAddon(),
-);
+const term = new ReplTerminal({ scrollback: 10_000 }, new FitAddon());
 
 document.addEventListener('DOMContentLoaded', async () => {
   const terminalElement = document.getElementById('terminal');
@@ -62,12 +59,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  const downloadOutput =
-    document.getElementById('download') as HTMLSelectElement;
+  const downloadOutput = document.getElementById(
+    'download'
+  ) as HTMLSelectElement;
   downloadOutput.addEventListener('click', downloadTerminalContents);
 
   const clearOutput = document.getElementById('clear') as HTMLSelectElement;
-  clearOutput.addEventListener('click', ()=>{
+  clearOutput.addEventListener('click', () => {
     term.clear();
   });
 });
@@ -89,8 +87,10 @@ function downloadTerminalContents(): void {
   const contents = term.getSelection();
   term.clearSelection();
   const linkContent = URL.createObjectURL(
-      new Blob([new TextEncoder().encode(contents).buffer],
-          {type: 'text/plain'}));
+    new Blob([new TextEncoder().encode(contents).buffer], {
+      type: 'text/plain',
+    })
+  );
   const fauxLink = document.createElement('a');
   fauxLink.download = `terminal_content_${new Date().getTime()}.txt`;
   fauxLink.href = linkContent;
@@ -125,8 +125,7 @@ class PicoSerial {
    * @param {SerialPort} port 検索するポート
    * @return {PortOption}
    */
-  findPortOption(port: SerialPort):
-    PortOption | null {
+  findPortOption(port: SerialPort): PortOption | null {
     if (!this.portSelector) return null;
     for (let i = 0; i < this.portSelector.options.length; ++i) {
       const option = this.portSelector.options[i];
@@ -142,11 +141,11 @@ class PicoSerial {
   }
 
   /**
-  * 指定されたポートを選択ドロップダウンに追加します。
-  *
-  * @param {SerialPort} port 追加するポート
-  * @return {PortOption}
-  */
+   * 指定されたポートを選択ドロップダウンに追加します。
+   *
+   * @param {SerialPort} port 追加するポート
+   * @return {PortOption}
+   */
   addNewPort(port: SerialPort): PortOption {
     const portOption = document.createElement('option') as PortOption;
     portOption.textContent = `Port ${this.portCounter++}`;
@@ -156,11 +155,11 @@ class PicoSerial {
   }
 
   /**
-  * 指定されたポートを選択ドロップダウンに追加するか、既に存在する場合は既存のオプションを返します。
-  *
-  * @param {SerialPort} port 追加するポート
-  * @return {PortOption}
-  */
+   * 指定されたポートを選択ドロップダウンに追加するか、既に存在する場合は既存のオプションを返します。
+   *
+   * @param {SerialPort} port 追加するポート
+   * @return {PortOption}
+   */
   maybeAddNewPort(port: SerialPort): PortOption {
     const portOption = this.findPortOption(port);
     if (portOption) {
@@ -170,9 +169,9 @@ class PicoSerial {
   }
 
   /**
-  * 現在選択されているポートを |picoport| に設定します。
-  * 選択されていない場合は、ユーザーにポートの選択を促します。
-  */
+   * 現在選択されているポートを |picoport| に設定します。
+   * 選択されていない場合は、ユーザーにポートの選択を促します。
+   */
   async getSelectedPort(): Promise<void> {
     if (this.portSelector?.value == 'prompt') {
       try {
@@ -184,14 +183,15 @@ class PicoSerial {
       const portOption = this.maybeAddNewPort(this.picoport);
       portOption.selected = true;
     } else {
-      const selectedOption = this.portSelector?.selectedOptions[0] as PortOption;
+      const selectedOption = this.portSelector
+        ?.selectedOptions[0] as PortOption;
       this.picoport = selectedOption.port;
     }
   }
 
   /**
-  * 接続をクローズします
-  */
+   * 接続をクローズします
+   */
   async disconnectFromPort(): Promise<void> {
     // Move |port| into a local variable so that connectToPort() doesn't try to
     // close it on exit.
@@ -252,7 +252,7 @@ class PicoSerial {
     }
     this.markConnected();
     try {
-      await this.picoport.open({baudRate: 115200});
+      await this.picoport.open({ baudRate: 115200 });
       term.writeln('<CONNECTED>');
     } catch (e) {
       console.error(e);
@@ -302,14 +302,16 @@ class PicoSerial {
 var picoserial = new PicoSerial();
 
 document.addEventListener('DOMContentLoaded', async () => {
-  picoserial.portSelector =
-    document.getElementById('ports') as HTMLSelectElement;
-  picoserial.connectButton =
-    document.getElementById('connect') as HTMLButtonElement;
+  picoserial.portSelector = document.getElementById(
+    'ports'
+  ) as HTMLSelectElement;
+  picoserial.connectButton = document.getElementById(
+    'connect'
+  ) as HTMLButtonElement;
 
   // picoserial = new PicoSerial(portSelector, connectButton);
-  
-  const ports: (SerialPort)[] = await navigator.serial.getPorts();
+
+  const ports: SerialPort[] = await navigator.serial.getPorts();
   ports.forEach((port) => picoserial.addNewPort(port));
 
   picoserial.connectButton.addEventListener('click', async () => {
@@ -384,8 +386,8 @@ class Pico {
    * @return {Promise<string>} - 受信した文字列を返すプロミス
    */
   async clearpicoport(
-      targetChar: string | false,
-      callback: ((chunk: string) => void) | null
+    targetChar: string | false,
+    callback: ((chunk: string) => void) | null
   ): Promise<string> {
     let result = '';
     if (picoserial.picoport && picoserial.picoport.readable) {
@@ -428,7 +430,7 @@ class Pico {
    */
   async readpicoport(): Promise<void> {
     // console.log('readpicoport!');
-    await this.clearpicoport(false, async (chunk)=> {
+    await this.clearpicoport(false, async (chunk) => {
       // console.log('chunk:', chunk);
       // ターミナルに出力
       await new Promise<void>((resolve) => {
@@ -475,18 +477,18 @@ class Pico {
  *  - データチャンクを文字列として返す非同期ジェネレーター
  */
 async function* readFromPort(
-    reader: ReadableStreamDefaultReader,
-    targetChar: string | false
+  reader: ReadableStreamDefaultReader,
+  targetChar: string | false
 ): AsyncGenerator<string> {
   const decoder = new TextDecoder();
 
   while (true) {
-    const {value, done} = await reader.read();
+    const { value, done } = await reader.read();
     if (done) {
       return;
     }
 
-    const chunk = decoder.decode(value, {stream: true});
+    const chunk = decoder.decode(value, { stream: true });
     yield chunk;
 
     // targetChar が false でない場合にのみチェック
@@ -571,23 +573,27 @@ function stringToUint8Array(str: string): Uint8Array {
 
 // Monaco Editorの初期化
 document.addEventListener('DOMContentLoaded', () => {
-  const editor =
-    monaco.editor.create(document.getElementById('editor') as HTMLElement, {
+  const editor = monaco.editor.create(
+    document.getElementById('editor') as HTMLElement,
+    {
       value: '',
       language: 'python',
       theme: 'vs-dark',
-    });
+    }
+  );
 
   // Load main.pyボタンのクリックイベント
-  const loadFileButton =
-    document.getElementById('loadFileButton') as HTMLButtonElement;
+  const loadFileButton = document.getElementById(
+    'loadFileButton'
+  ) as HTMLButtonElement;
   loadFileButton.addEventListener('click', async () => {
     await loadTempPy(editor);
   });
 
   // Send Textボタンのクリックイベント
-  const saveFileButton =
-    document.getElementById('saveFileButton') as HTMLButtonElement;
+  const saveFileButton = document.getElementById(
+    'saveFileButton'
+  ) as HTMLButtonElement;
   saveFileButton.addEventListener('click', async () => {
     const text = editor.getValue();
     const binaryData = stringToUint8Array(text);
@@ -595,8 +601,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // run Code ボタンのクリックイベント
-  const runCodeButton =
-    document.getElementById('runCodeButton') as HTMLButtonElement;
+  const runCodeButton = document.getElementById(
+    'runCodeButton'
+  ) as HTMLButtonElement;
   runCodeButton.addEventListener('click', async () => {
     // CTRL+A, コード, CTRL+D, CTRL+B
     const text = '\x01' + editor.getValue() + '\x04\x02';
@@ -604,9 +611,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // STOPボタン：CTRL-C を送信
-  const stopButton =
-    document.getElementById('stopButton') as HTMLButtonElement;
-  stopButton.addEventListener('click', async ()=> {
+  const stopButton = document.getElementById('stopButton') as HTMLButtonElement;
+  stopButton.addEventListener('click', async () => {
     await pico.sendCommand('\x03'); // CTRL+C
   });
 });
