@@ -16,8 +16,6 @@
 
 import 'xterm/css/xterm.css';
 import * as monaco from 'monaco-editor';
-// eslint-disable-next-line no-unused-vars
-import { SerialPort } from 'web-serial-polyfill';
 import { term } from './utils/replTerminal';
 import { picoSerial } from './utils/picoSerial';
 import { pico } from './utils/pico';
