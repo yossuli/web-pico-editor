@@ -73,7 +73,6 @@ class Pico {
               result += chunk;
             }
           }
-          // console.log('DONE!!!!!!!!!');
         } catch (e) {
           console.error(e);
           await new Promise<void>((resolve) => {
@@ -94,15 +93,11 @@ class Pico {
    * read the port.
    */
   async readPicoPort(): Promise<void> {
-    // console.log('readpicoport!');
     await this.clearPicoPort(false, async (chunk) => {
-      // console.log('chunk:', chunk);
-      // ターミナルに出力
       await new Promise<void>((resolve) => {
-        term.write(chunk, resolve);
+        term.write(chunk, resolve); // ターミナルに出力
       });
     });
-    // console.log('!!readpicoport!!');
   }
 
   /**
@@ -119,7 +114,6 @@ class Pico {
       await this.write('\x01'); // CTRL+A
       await this.write(`with open("${filename}", "wb") as f:\r`);
       const chunk = JSON.stringify(Array.from(content));
-      // console.log('chunk:', chunk);
       await this.write(`  f.write(bytes(${chunk}))\r`);
       await this.write('\x04'); // CTRL+D
       this.releaseLock();

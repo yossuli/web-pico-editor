@@ -22,7 +22,6 @@ export async function* readFromPort(
     const chunk = decoder.decode(value, { stream: true });
     yield chunk;
 
-    // targetChar が false でない場合にのみチェック
     if (targetChar && chunk.includes(targetChar)) {
       return;
     }
