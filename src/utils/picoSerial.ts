@@ -12,9 +12,9 @@ class PicoSerial {
   private portCounter = 1; // addNewPort で名前の末尾に付ける番号
 
   // 現在使用しているポート
-  public picoport: SerialPort | undefined;
+  public picoPort: SerialPort | undefined;
   // 現在使用しているリーダー
-  public picoreader: ReadableStreamDefaultReader | undefined;
+  public picoReader: ReadableStreamDefaultReader | undefined;
 
   /**
    * 指定されたSerialPortを検索して返します。
@@ -66,23 +66,23 @@ class PicoSerial {
   }
 
   /**
-   * 現在選択されているポートを |picoport| に設定します。
+   * 現在選択されているポートを |picoPort| に設定します。
    * 選択されていない場合は、ユーザーにポートの選択を促します。
    */
   async getSelectedPort(): Promise<void> {
     if (this.portSelector?.value == 'prompt') {
       try {
         const serial = navigator.serial;
-        this.picoport = await serial.requestPort({});
+        this.picoPort = await serial.requestPort({});
       } catch (e) {
         return;
       }
-      const portOption = this.maybeAddNewPort(this.picoport);
+      const portOption = this.maybeAddNewPort(this.picoPort);
       portOption.selected = true;
     } else {
       const selectedOption = this.portSelector
         ?.selectedOptions[0] as PortOption;
-      this.picoport = selectedOption.port;
+      this.picoPort = selectedOption.port;
     }
   }
 
@@ -92,11 +92,11 @@ class PicoSerial {
   async disconnectFromPort(): Promise<void> {
     // Move |port| into a local variable so that connectToPort() doesn't try to
     // close it on exit.
-    const localPort = this.picoport;
-    this.picoport = undefined;
+    const localPort = this.picoPort;
+    this.picoPort = undefined;
 
-    if (this.picoreader) {
-      await this.picoreader.cancel();
+    if (this.picoReader) {
+      await this.picoReader.cancel();
     }
 
     if (localPort) {
@@ -113,7 +113,7 @@ class PicoSerial {
    * みためを|未接続|状態にリセットします
    */
   markDisconnected(): void {
-    this.picoport = undefined;
+    this.picoPort = undefined;
     term.writeln('<DISCONNECTED>');
     if (this.portSelector) {
       this.portSelector.disabled = false;
@@ -142,14 +142,14 @@ class PicoSerial {
   /**
    * ポートをオープンします
    */
-  async openpicoport(): Promise<void> {
+  async openPicoPort(): Promise<void> {
     await this.getSelectedPort();
-    if (!this.picoport) {
+    if (!this.picoPort) {
       return;
     }
     this.markConnected();
     try {
-      await this.picoport.open({ baudRate: 115200 });
+      await this.picoPort.open({ baudRate: 115200 });
       term.writeln('<CONNECTED>');
     } catch (e) {
       console.error(e);
@@ -161,28 +161,28 @@ class PicoSerial {
     }
   }
 
-  private picowriter: WritableStreamDefaultWriter | null = null;
+  private picoWriter: WritableStreamDefaultWriter | null = null;
 
   /**
    * WritableStreamDefaultWriter を取得します。
    * @return {WritableStreamDefaultWriter | null}
    */
   getWritablePort(): WritableStreamDefaultWriter | null {
-    if (this.picoport && this.picoport.writable) {
-      this.picowriter = this.picoport.writable.getWriter();
+    if (this.picoPort && this.picoPort.writable) {
+      this.picoWriter = this.picoPort.writable.getWriter();
     } else {
-      this.picowriter = null;
+      this.picoWriter = null;
     }
-    return this.picowriter;
+    return this.picoWriter;
   }
   /**
-   * Releases the lock held by the `picowriter` if it exists.
-   * This method checks if the `picowriter` is defined and, if so,
+   * Releases the lock held by the `picoWriter` if it exists.
+   * This method checks if the `picoWriter` is defined and, if so,
    * calls its `releaseLock` method to release any held resources.
    */
   releaseLock() {
-    if (this.picowriter) {
-      this.picowriter.releaseLock();
+    if (this.picoWriter) {
+      this.picoWriter.releaseLock();
     }
   }
   /**
@@ -193,9 +193,9 @@ class PicoSerial {
    * @return {void}
    * A promise that resolves when the write operation is complete.
    */
-  async picowrite(data: Uint8Array) {
-    await this.picowriter?.write(data);
+  async picoWrite(data: Uint8Array) {
+    await this.picoWriter?.write(data);
   }
 }
 
-export const picoserial = new PicoSerial();
+export const picoSerial = new PicoSerial();

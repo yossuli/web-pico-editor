@@ -19,7 +19,7 @@ import * as monaco from 'monaco-editor';
 // eslint-disable-next-line no-unused-vars
 import { SerialPort } from 'web-serial-polyfill';
 import { term } from './utils/replTerminal';
-import { picoserial } from './utils/picoSerial';
+import { picoSerial } from './utils/picoSerial';
 import { pico } from './utils/pico';
 import { setup } from './utils/setup';
 import { binaryStringToUint8Array } from './utils/binaryStringToUint8Array';
@@ -83,8 +83,8 @@ setup();
  *  - The Monaco editor instance.
  */
 async function loadTempPy(editor: monaco.editor.IStandaloneCodeEditor) {
-  if (picoserial.picoreader) {
-    await picoserial.picoreader.cancel(); // ターミナル出力を停止
+  if (picoSerial.picoReader) {
+    await picoSerial.picoReader.cancel(); // ターミナル出力を停止
   }
   const filename = 'temp.py';
   if (pico.getWritablePort()) {
@@ -96,8 +96,8 @@ async function loadTempPy(editor: monaco.editor.IStandaloneCodeEditor) {
     await pico.write('\x04'); // CTRL+D
     pico.releaseLock();
 
-    await pico.clearpicoport('OK', null); // ">OK"を待つ
-    const result = await pico.clearpicoport('\x04', null); // CTRL-Dを待つ
+    await pico.clearPicoPort('OK', null); // ">OK"を待つ
+    const result = await pico.clearPicoPort('\x04', null); // CTRL-Dを待つ
 
     // ファイル内容を表示
     console.log('result:', result);
@@ -109,7 +109,7 @@ async function loadTempPy(editor: monaco.editor.IStandaloneCodeEditor) {
     // エディタに結果を表示
     editor.setValue(text);
   }
-  pico.readpicoport(); // ターミナル出力を再開
+  pico.readPicoPort(); // ターミナル出力を再開
 }
 
 // Monaco Editorの初期化

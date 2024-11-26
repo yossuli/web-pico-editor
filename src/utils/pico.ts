@@ -1,4 +1,4 @@
-import { picoserial } from './picoSerial';
+import { picoSerial as picoSerial } from './picoSerial';
 import { readFromPort } from './readFromPort';
 import { term } from './replTerminal';
 
@@ -12,23 +12,23 @@ class Pico {
    * The writer instance or null if not available.
    */
   getWritablePort() {
-    return picoserial.getWritablePort();
+    return picoSerial.getWritablePort();
   }
 
   /**
-   * Release the picowriter lock.
+   * Release the picoWriter lock.
    */
   releaseLock() {
-    picoserial.releaseLock();
+    picoSerial.releaseLock();
   }
 
   /**
-   * Write a string to the picowriter.
+   * Write a string to the picoWriter.
    * @param {string} s - The string to write.
-   * @throws {Error} If the picowriter is not available.
+   * @throws {Error} If the picoWriter is not available.
    */
   async write(s: string) {
-    await picoserial.picowrite(new TextEncoder().encode(s));
+    await picoSerial.picoWrite(new TextEncoder().encode(s));
   }
 
   /**
@@ -50,15 +50,15 @@ class Pico {
    * - コールバック関数。引数として文字列を受け取り、戻り値はありません。
    * @return {Promise<string>} - 受信した文字列を返すプロミス
    */
-  async clearpicoport(
+  async clearPicoPort(
     targetChar: string | false,
     callback: ((chunk: string) => void) | null
   ): Promise<string> {
     let result = '';
-    if (picoserial.picoport && picoserial.picoport.readable) {
-      picoserial.picoreader = picoserial.picoport.readable.getReader();
-      const generator = readFromPort(picoserial.picoreader, targetChar);
-      if (picoserial.picoreader) {
+    if (picoSerial.picoPort && picoSerial.picoPort.readable) {
+      picoSerial.picoReader = picoSerial.picoPort.readable.getReader();
+      const generator = readFromPort(picoSerial.picoReader, targetChar);
+      if (picoSerial.picoReader) {
         try {
           for await (const chunk of generator) {
             if (callback) {
@@ -82,8 +82,8 @@ class Pico {
             }
           });
         } finally {
-          picoserial.picoreader.releaseLock();
-          picoserial.picoreader = undefined;
+          picoSerial.picoReader.releaseLock();
+          picoSerial.picoReader = undefined;
         }
       }
     }
@@ -93,9 +93,9 @@ class Pico {
   /**
    * read the port.
    */
-  async readpicoport(): Promise<void> {
+  async readPicoPort(): Promise<void> {
     // console.log('readpicoport!');
-    await this.clearpicoport(false, async (chunk) => {
+    await this.clearPicoPort(false, async (chunk) => {
       // console.log('chunk:', chunk);
       // ターミナルに出力
       await new Promise<void>((resolve) => {
@@ -111,10 +111,10 @@ class Pico {
    * @param {string} content - The content to write to the file.
    */
   async writeFile(filename: string, content: Uint8Array) {
-    if (picoserial.picoreader) {
-      await picoserial.picoreader.cancel(); // ターミナル出力を停止
+    if (picoSerial.picoReader) {
+      await picoSerial.picoReader.cancel(); // ターミナル出力を停止
     }
-    this.clearpicoport(false, null); // ターミナル出力せずに読み込み（バッファをクリア）
+    this.clearPicoPort(false, null); // ターミナル出力せずに読み込み（バッファをクリア）
     if (this.getWritablePort()) {
       await this.write('\x01'); // CTRL+A
       await this.write(`with open("${filename}", "wb") as f:\r`);
@@ -125,10 +125,10 @@ class Pico {
       this.releaseLock();
       pico.sendCommand('\x02'); // CTRL+B
     }
-    if (picoserial.picoreader) {
-      await picoserial.picoreader.cancel(); // ターミナル出力を停止
+    if (picoSerial.picoReader) {
+      await picoSerial.picoReader.cancel(); // ターミナル出力を停止
     }
-    this.readpicoport(); // ターミナル出力を再開
+    this.readPicoPort(); // ターミナル出力を再開
   }
 }
 // Pico クラスのインスタンスを作成
